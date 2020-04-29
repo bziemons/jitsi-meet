@@ -152,6 +152,57 @@ window.JitsiMeetScreenObtainer = {
     }
 };
 
+window.jitsihax = {
+	other_group_gain: 0.05,
+	pan_nodes: {},
+	gain_nodes: {},
+	participants: {},
+	addParticipant(id, displayName) {
+	    this.participants[id] = { pan: 0, gain: 1, displayName: displayName };
+	},
+	sync() {
+	    var extractGroup = (s) => {
+		    if (s === undefined) return 'default';
+		    var idx = s.lastIndexOf('&');
+		    if (idx > 0) {
+		        return s.substr(idx + 1);
+		    }
+		    return 'default';
+
+	    };
+	    var ownName = APP.conference.getLocalDisplayName();
+	    var ownGroup = extractGroup(ownName);
+	    var groups = new Set();
+	    groups.add(ownGroup);
+	    for (let [id, p] of Object.entries(this.participants)) {
+                groups.add(extractGroup(p.displayName));
+	    }
+	    groups = Array.from(groups.values()).sort();
+	    var ownIdx = groups.indexOf(ownGroup);
+	    for (let [id, p] of Object.entries(this.participants)) {
+		var pGroupIdx = groups.indexOf(extractGroup(p.displayName));
+		if (pGroupIdx < ownIdx) {
+		    p.pan = -1;
+		    p.gain = this.other_group_gain;
+		} else if (pGroupIdx === ownIdx) {
+		    p.pan = 0;
+		    p.gain = 1;
+		} else {
+		    p.pan = 1;
+		    p.gain = this.other_group_gain;
+		}
+	    }
+	    for (let [id, p] of Object.entries(this.participants)) {
+		if (this.pan_nodes[id] !== undefined) {
+		    this.pan_nodes[id].pan.value = p.pan;
+		}
+		if (this.gain_nodes[id] !== undefined) {
+		    this.gain_nodes[id].gain.value = p.gain;
+		}
+	    }
+	}
+};
+
 /**
  * Known custom conference commands.
  */
@@ -1977,6 +2028,8 @@ export default {
 
             logger.log(`USER ${id} connnected:`, user);
             APP.UI.addUser(user);
+	    window.jitsihax.addParticipant(id, user._displayName);
+	    window.jitsihax.sync();
         });
 
         room.on(JitsiConferenceEvents.USER_LEFT, (id, user) => {
@@ -2107,6 +2160,12 @@ export default {
                                 || interfaceConfig.DEFAULT_REMOTE_DISPLAY_NAME)
                 });
                 APP.UI.changeDisplayName(id, formattedDisplayName);
+		if (window.jitsihax.participants[id] === undefined) {
+		    window.jitsihax.addParticipant(id, displayName);
+		}
+		window.jitsihax.participants[id].displayName = displayName;
+		window.jitsihax.sync();
+		//window.jitsihax.pan[id].pan.value = displayName.endsWith('(L)') ? -1 : 1;
             }
         );
         room.on(
@@ -2978,6 +3037,7 @@ export default {
 
         if (room) {
             APP.UI.changeDisplayName(id, formattedNickname);
+	    window.jitsihax.sync();
         }
     },
 
